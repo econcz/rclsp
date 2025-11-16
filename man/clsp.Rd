@@ -2,7 +2,7 @@
 % Please edit documentation in R/clsp.R
 \name{clsp}
 \alias{clsp}
-\title{Convex Least Squares Programming (CLSP) estimator}
+\title{Convex Least Squares Programming (CLSP) estimator.}
 \usage{
 clsp(
   problem = "",
@@ -136,4 +136,83 @@ mixed \eqn{\ell_1/\ell_2} norm under equality constraints
 \eqn{\mathbf{A}\mathbf{z} = \mathbf{b}}. The method supports allocation
 problems (AP), constrained modular least squares (CMLS), and general CLSP
 formulations.
+}
+\examples{
+\dontrun{
+  ## Example: CMLS (RP) estimation with stationary-point constraints
+
+  set.seed(123456789)
+
+  # sample (dataset)
+  k  <- 500L                                        # number of observations
+  p  <- 6L                                          # number of regressors
+  c0 <- 1                                           # sum of coefficients
+
+  D        <- matrix(NA_real_, nrow = k, ncol = p)
+  D[, 1]   <- 1.0                                   # constant
+  D[, 2:p] <- matrix(rnorm(k * (p - 1)), k, p - 1)
+
+  b_true   <- rnorm(p)
+  b_true   <- (b_true / sum(b_true)) * c0           # normalize to sum = c
+
+  e        <- matrix(rnorm(k), ncol = 1)
+  y        <- D \%*\% b_true + e
+
+  # build blocks for CLSP (CMLS)
+  b <- rbind(
+      matrix(c0, ncol = 1),                         # sum of coefficients
+      matrix(0,  nrow = k - 2, ncol = 1),
+      matrix(0,  nrow = k - 1, ncol = 1),
+      matrix(y,  ncol = 1)
+  )
+
+  C <- rbind(
+      matrix(1, nrow = 1, ncol = p),                # row of ones
+      diff(D, differences = 2),                     # 2nd differences
+      diff(D, differences = 1)                      # 1st differences
+  )
+
+  # diagonal sign-matrix for 2nd differences
+  S <- rbind(
+      matrix(0, nrow = 1,      ncol = k - 2),
+      diag(sign(diff(as.numeric(y), differences = 2))),
+      matrix(0, nrow = k - 1,  ncol = k - 2)
+  )
+
+  # model
+  model <- rclsp::clsp(
+      problem = "cmls",
+      b       = b,
+      C       = C,
+      S       = S,
+      M       = D,
+      r       = 1L,                                 # no refinement
+      alpha   = 1.0                                 # MNBLUE solution
+  )
+
+  # results
+  print("true beta (x_M):")
+  print(round(b_true, 4))
+
+  print("beta hat (x_M hat):")
+  print(round(model$x, 4))
+
+  print(model)
+
+  # bootstrap t-test
+  tt <- rclsp::ttest(
+      model,
+      sample_size  = 30L,
+      seed         = 123456789L,
+      distribution = rnorm,
+      partial      = TRUE
+  )
+
+  print("Bootstrap t-test:")
+  print(tt)
+}
+
+}
+\seealso{
+\link[CVXR]{CVXR}
 }

@@ -1,4 +1,4 @@
-#' Convex Least Squares Programming (CLSP) estimator
+#' Convex Least Squares Programming (CLSP) estimator.
 #'
 #' @description
 #' The Convex Least Squares Programming (CLSP) estimator solves
@@ -34,7 +34,7 @@
 #'   matrix \eqn{\boldsymbol{A}} is constructed accordingly. If both are
 #'   \code{NULL} and \eqn{\boldsymbol{A}} is not yet defined, an error is
 #'   raised.
-#'   
+#'
 #' @param b numeric vector or \code{NULL}  
 #'   Right-hand-side vector. Must have as many rows as \eqn{\boldsymbol{A}}.
 #'   Required.
@@ -107,8 +107,86 @@
 #' \code{corr.clsp()}, and \code{ttest.clsp()} can be used to
 #' extract, analyze, and summarize the results.
 #'
+#' @seealso \link[CVXR]{CVXR}
+#'
+#' @examples
+#' \dontrun{
+#'   ## Example: CMLS (RP) estimation with stationary-point constraints
+#'
+#'   set.seed(123456789)
+#'
+#'   # sample (dataset)
+#'   k  <- 500L                                        # number of observations
+#'   p  <- 6L                                          # number of regressors
+#'   c0 <- 1                                           # sum of coefficients
+#'
+#'   D        <- matrix(NA_real_, nrow = k, ncol = p)
+#'   D[, 1]   <- 1.0                                   # constant
+#'   D[, 2:p] <- matrix(rnorm(k * (p - 1)), k, p - 1)
+#'
+#'   b_true   <- rnorm(p)
+#'   b_true   <- (b_true / sum(b_true)) * c0           # normalize to sum = c
+#'
+#'   e        <- matrix(rnorm(k), ncol = 1)
+#'   y        <- D %*% b_true + e
+#'
+#'   # build blocks for CLSP (CMLS)
+#'   b <- rbind(
+#'       matrix(c0, ncol = 1),                         # sum of coefficients
+#'       matrix(0,  nrow = k - 2, ncol = 1),
+#'       matrix(0,  nrow = k - 1, ncol = 1),
+#'       matrix(y,  ncol = 1)
+#'   )
+#'
+#'   C <- rbind(
+#'       matrix(1, nrow = 1, ncol = p),                # row of ones
+#'       diff(D, differences = 2),                     # 2nd differences
+#'       diff(D, differences = 1)                      # 1st differences
+#'   )
+#'
+#'   # diagonal sign-matrix for 2nd differences
+#'   S <- rbind(
+#'       matrix(0, nrow = 1,      ncol = k - 2),
+#'       diag(sign(diff(as.numeric(y), differences = 2))),
+#'       matrix(0, nrow = k - 1,  ncol = k - 2)
+#'   )
+#'
+#'   # model
+#'   model <- rclsp::clsp(
+#'       problem = "cmls",
+#'       b       = b,
+#'       C       = C,
+#'       S       = S,
+#'       M       = D,
+#'       r       = 1L,                                 # no refinement
+#'       alpha   = 1.0                                 # MNBLUE solution
+#'   )
+#'
+#'   # results
+#'   print("true beta (x_M):")
+#'   print(round(b_true, 4))
+#'
+#'   print("beta hat (x_M hat):")
+#'   print(round(model$x, 4))
+#'
+#'   print(model)
+#'
+#'   # bootstrap t-test
+#'   tt <- rclsp::ttest(
+#'       model,
+#'       sample_size  = 30L,
+#'       seed         = 123456789L,
+#'       distribution = rnorm,
+#'       partial      = TRUE
+#'   )
+#'
+#'   print("Bootstrap t-test:")
+#'   print(tt)
+#' }
+#'
 #' @importFrom methods as
 #' @importFrom stats rnorm sd setNames
+#'
 #' @export
 clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
                  i=1L, j=1L, zero_diagonal=FALSE, r=1L, Z=NULL, rcond=FALSE,
@@ -344,21 +422,21 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
     result <- numeric(length(alpha))
     idx    <- 1L
     for (a in alpha) {
-      result[idx] <- to.nrmse(do.call(.solve.instance,
+      result[idx] <- suppressWarnings(to.nrmse(do.call(.solve.instance,
                                       c(list(object, tolerance=object$tolerance,
-                                             final=TRUE, alpha=a), dots))$nrmse)
+                                      final=TRUE, alpha=a), dots))$nrmse))
       idx         <- idx + 1L
     }
     object$alpha  <- if (length(result) > 0L) alpha[which.min(result)]  else
                                               NULL
   }
   if (is.null(object$alpha)) {                         # error rule
-    nrmse.alpha0  <- to.nrmse(do.call(.solve.instance,
+    nrmse.alpha0  <- suppressWarnings(to.nrmse(do.call(.solve.instance,
                                       c(list(object, tolerance=object$tolerance,
-                                             final=TRUE, alpha=0), dots))$nrmse)
-    nrmse.alpha1  <- to.nrmse(do.call(.solve.instance,
+                                      final=TRUE, alpha=0), dots))$nrmse))
+    nrmse.alpha1  <- suppressWarnings(to.nrmse(do.call(.solve.instance,
                                       c(list(object, tolerance=object$tolerance,
-                                             final=TRUE, alpha=1), dots))$nrmse)
+                                      final=TRUE, alpha=1), dots))$nrmse))
     denominator   <- nrmse.alpha0 + nrmse.alpha1 + object$tolerance
     object$alpha  <- if (is.finite(denominator) && denominator > 0)
                      to.alpha(nrmse.alpha0 / denominator)               else
