@@ -61,7 +61,7 @@ canonize.clsp <- function(object, problem="", C=NULL, S=NULL, M=NULL, Q=NULL,
                           zero_diagonal=FALSE) {
   # (b) Ensure the right-hand side is defined and set `object$b`
   if (is.null(b)) stop("Right-hand side vector b must be provided.")
-  object$b <- matrix(as.numeric(b), ncol=1)
+  object$b <- matrix(as.numeric(b), ncol=1, byrow=TRUE)
   
   if (!is.null(C)) storage.mode(C) <- "double"
   if (!is.null(S)) storage.mode(S) <- "double"
@@ -90,18 +90,23 @@ canonize.clsp <- function(object, problem="", C=NULL, S=NULL, M=NULL, Q=NULL,
       M_flag <- is.null(M) || length(M) == 0
       M_diag <- matrix(0, nrow=min(m, p), ncol=m * p)
       for (k in seq_len(min(m, p))) M_diag[k, (k - 1) * p + k] <- 1
-      tmp      <- if (M_flag) M_diag                             else
-        rbind(M, M_diag)
-      idx      <- !duplicated(tmp)
-      M        <- tmp[idx, ,                                       drop=FALSE]
-      object$b <- rbind(object$b[1:nrow(C), ,                      drop=FALSE],
-                        if   (M_flag)            matrix(0, min(m, p), 1) else
-                             rbind(object$b[(nrow(C) + 1):nrow(object$b), ,
-                                                                   drop=FALSE],
-                                   matrix(0, min(m, p), 1))[idx, , drop=FALSE])
+      tmp    <- if (M_flag) M_diag                               else
+                   rbind(M, M_diag)
+      ord <- do.call(order, as.data.frame(tmp))
+      idx <- ord[!duplicated(tmp[ord, , drop=FALSE])]
+      M   <- tmp[idx, ,                 drop=FALSE]
+      object$b <- rbind(
+        object$b[seq_len(nrow(C)), ,    drop=FALSE],
+        (if (M_flag)
+          matrix(0, min(m, p), 1)
+         else
+           rbind(object$b[(nrow(C) + 1):nrow(object$b), , drop=FALSE],
+                 matrix(0, min(m, p), 1))
+        )[idx, , drop = FALSE]
+      )
     }
   }
-
+  
   # (A) Option 2. CMLS and RP problems
   if (grepl("cmls|rp", tolower(problem)) && (is.null(C) || is.null(M)))
     stop("Both C and M must be provided.")
@@ -190,7 +195,7 @@ corr.clsp <- function(object, reset=FALSE, threshold=0) {
         cos <- c()
         for (i in 1:(k - 1))
           for (j in (i + 1):k) cos <- c(cos, sum(C_canon[i, ] * C_canon[j, ]) /
-                                      (norms[i] * norms[j]))
+                                          (norms[i] * norms[j]))
         sqrt(2 / (k * (k - 1)) * sum(cos^2))
       }
     }
@@ -220,7 +225,7 @@ corr.clsp <- function(object, reset=FALSE, threshold=0) {
         cos_i <- c()
         for (j in 1:k)
           if (j != i) cos_i <- c(cos_i, sum(C_canon[i, ] * C_canon[j, ]) /
-                               (norms[i] * norms[j]))
+                                   (norms[i] * norms[j]))
         sqrt(1 / (k - 1) * sum(cos_i^2))
       }
       object$rmsa_dkappaC[i] <- tmp$kappaC - object$kappaC
@@ -229,8 +234,8 @@ corr.clsp <- function(object, reset=FALSE, threshold=0) {
       object$rmsa_dnrmse[i]  <- tmp$nrmse  - object$nrmse
       object$rmsa_dzhat[[i]] <- tmp$zhat   - object$zhat
       object$rmsa_dz[[i]]    <- tmp$z      - object$z
-      object$rmsa_dx[[i]]    <- matrix(tmp$x,    ncol = 1) -
-                                matrix(object$x, ncol = 1)
+      object$rmsa_dx[[i]]    <- matrix(tmp$x,    ncol = 1, byrow=TRUE) -
+        matrix(object$x, ncol = 1, byrow=TRUE)
     }
   }
   
@@ -321,7 +326,8 @@ ttest.clsp <- function(object, reset=FALSE, sample_size=50L,
       res <- object$b - object$A %*% object$zhat
       for (i in seq_len(sample_size)) {
         res_bs                <- matrix(sample(as.vector(res), size=length(res),
-                                               replace=TRUE), ncol=1)
+                                               replace=TRUE), ncol=1,
+                                        byrow=TRUE)
         object$nrmse_ttest[i] <-as.numeric(.nrmse.r2(object, res=res_bs,
                                                      partial=isTRUE(partial)))
       }
@@ -330,13 +336,13 @@ ttest.clsp <- function(object, reset=FALSE, sample_size=50L,
       tmp <- unserialize(serialize(object, NULL))
       for (i in seq_len(sample_size)) {
         tmp$b                 <- if (!isTRUE(partial))
-          matrix(distribution(length(object$b)),    ncol=1)      else
-          rbind(matrix(object$b[1:object$C_idx[1]],
-                       ncol=1),
-                matrix(distribution(length(object$b) - object$C_idx[1]),
-                       ncol=1))                        # simulate b_M only
+          matrix(distribution(length(object$b)), ncol=1, byrow=TRUE)  else
+            rbind(matrix(object$b[1:object$C_idx[1]],
+                         ncol=1, byrow=TRUE),
+                  matrix(distribution(length(object$b) - object$C_idx[1]),
+                         ncol=1, byrow=TRUE))            # simulate b_M only
         suppressWarnings(tmp  <- .solve(tmp))
-        object$nrmse_ttest[i] <- if (!isTRUE(partial)) tmp$nrmse else
+        object$nrmse_ttest[i] <- if (!isTRUE(partial)) tmp$nrmse      else
           tmp$nrmse_partial
       }
     }
