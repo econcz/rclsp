@@ -269,6 +269,8 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
   if      (r < 1L)   stop("Number of refinement iterations r must be \u2265 1.")
   if      (!is.null(Z))               object$Z <- Z
   else if (is.null(object$Z))         object$Z <- diag(ncol(object$A))
+  else                                object$Z <- object$Z[1:ncol(object$A),
+                                                           1:ncol(object$A)]
   if      (!is.null(tolerance))       object$tolerance       <- tolerance
   if      (!is.null(iteration_limit)) object$iteration_limit <- iteration_limit
   if      (!isTRUE(all.equal(object$Z,                    t(object$Z),

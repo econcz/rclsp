@@ -1,3 +1,8 @@
+# rclsp 0.4.0
+
+## Bug fixes
+* Fixed potential projector Z dimension mismatch under repeated solve() calls.
+
 # rclsp 0.3.0
 
 ## Bug fixes
