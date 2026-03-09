@@ -1,3 +1,8 @@
+# rclsp 0.5.0
+
+## Bug fixes
+* Updated CVXR integration for CVXR 1.8.x compatibility.
+
 # rclsp 0.4.0
 
 ## Bug fixes

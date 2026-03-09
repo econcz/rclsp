@@ -1,7 +1,7 @@
 Package: rclsp
 Type: Package
 Title: A Modular Two-Step Convex Optimization Estimator for Ill-Posed Problems
-Version: 0.4.0
+Version: 0.5.0
 Authors@R: 
     c(
         person("Ilya", "Bolotov", email = "ilya.bolotov@vse.cz",
@@ -26,7 +26,7 @@ Imports:
     Matrix,
     stats,
     methods,
-    CVXR,
+    CVXR (>= 1.8.1),
     MASS
 Suggests: 
     testthat (>= 3.0.0)

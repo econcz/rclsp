@@ -341,19 +341,23 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
         object$alpha * CVXR::sum_squares(d_cvx)
       s_cvx <- "SCS"
     }
-    c_cvx <- list(A_csc %*% z_cvx == as.numeric(object$b))
+    c_cvx <- list(CVXR::as_cvxr_expr(A_csc) %*% z_cvx == as.numeric(object$b))
     p_cvx <- CVXR::Problem(CVXR::Minimize(f_obj), c_cvx)
     # solve
     dots       <- list(...)                            # pass arguments
     dots$rcond <- NULL
-    solution   <- try(do.call(p_cvx$solve, c(list(solver=s_cvx, verbose=FALSE),
-                                             dots)),              silent=TRUE)
-    if (inherits(solution, "try-error") || is.null(z_cvx$value)) {
-      warning(sprintf("Step 2 infeasible (%s); falling back", p_cvx@status),
+    solution   <- try(do.call(CVXR::psolve,c(list(p_cvx, solver=s_cvx,
+                              verbose=FALSE), dots)),          silent=TRUE)
+    z_val      <- try(CVXR::value(z_cvx),  silent=TRUE)
+    p_status   <- try(CVXR::status(p_cvx), silent=TRUE)
+    if (inherits(solution, "try-error") || inherits(z_val, "try-error") ||
+        is.null(z_val)) {
+      status_msg <- if (inherits(p_status, "try-error")) "unknown" else p_status
+      warning(sprintf("Step 2 infeasible (%s); falling back", status_msg),
               call. = FALSE)
       object$z     <- object$zhat
     } else {
-      object$z     <- as.numeric(z_cvx$value)
+      object$z     <- matrix(as.numeric(z_val), ncol=1)
       object$nrmse <- .nrmse.r2(object)
     }
   } else {
@@ -438,14 +442,14 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
   }
   if (is.null(object$alpha)) {                         # error rule
     nrmse.alpha0  <- suppressWarnings(to.nrmse(do.call(.solve.instance,
-                                     c(list(object, tolerance=object$tolerance,
+                                      c(list(object, tolerance=object$tolerance,
                                             final=NULL, alpha=0), dots))$nrmse))
     nrmse.alpha1  <- suppressWarnings(to.nrmse(do.call(.solve.instance,
-                                     c(list(object, tolerance=object$tolerance,
+                                      c(list(object, tolerance=object$tolerance,
                                             final=NULL, alpha=1), dots))$nrmse))
     denominator   <- nrmse.alpha0 + nrmse.alpha1 + object$tolerance
     object$alpha  <- if (is.finite(denominator) && denominator > 0)
-                     to.alpha(nrmse.alpha0 / denominator)               else
+      to.alpha(nrmse.alpha0 / denominator)               else
         0.5
   }
   
