@@ -148,8 +148,8 @@ canonize.clsp <- function(object, problem="", C=NULL, S=NULL, M=NULL, Q=NULL,
 #'         other rows \eqn{j \ne i}.
 #'   \item The change in condition numbers \eqn{\kappa(C)}, \eqn{\kappa(B)}, and
 #'         \eqn{\kappa(A)} when row \eqn{i} is deleted.
-#'   \item The effect on estimation quality: changes in NRMSE, \eqn{\hat{z}},
-#'         \eqn{z}, and \eqn{x}.
+#'   \item The effect on estimation quality: changes in NRMSE and in the norms
+#'         of \eqn{\hat{z}}, \eqn{z}, and \eqn{x}.
 #' }
 #'
 #' Additionally, it computes the total RMSA statistic across all rows,
@@ -167,15 +167,22 @@ canonize.clsp <- function(object, problem="", C=NULL, S=NULL, M=NULL, Q=NULL,
 #' @return
 #' A named list containing per-row diagnostic values:
 #' \describe{
-#'   \item{constraint}{Vector of constraint indices (1-based).}
-#'   \item{rmsa_i}{List of \eqn{\mathrm{RMSA}_i} values.}
-#'   \item{rmsa_dkappaC}{List of \eqn{\Delta\kappa(C)} after deleting row i.}
-#'   \item{rmsa_dkappaB}{List of \eqn{\Delta\kappa(B)} after deleting row i.}
-#'   \item{rmsa_dkappaA}{List of \eqn{\Delta\kappa(A)} after deleting row i.}
-#'   \item{rmsa_dnrmse}{List of \eqn{\Delta\mathrm{NRMSE}} after deleting row i.}
-#'   \item{rmsa_dzhat}{List of \eqn{\Delta\hat{z}} after deleting row i.}
-#'   \item{rmsa_dz}{List of \eqn{\Delta z} after deleting row i.}
-#'   \item{rmsa_dx}{List of \eqn{\Delta x} after deleting row i.}
+#'   \item{constraint}{Numeric vector of constraint indices (1-based).}
+#'   \item{rmsa_i}{Numeric vector of \eqn{\mathrm{RMSA}_i} values.}
+#'   \item{rmsa_dkappaC}{Numeric vector of \eqn{\Delta\kappa(C)} after
+#'   deleting row i.}
+#'   \item{rmsa_dkappaB}{Numeric vector of \eqn{\Delta\kappa(B)} after
+#'   deleting row i.}
+#'   \item{rmsa_dkappaA}{Numeric vector of \eqn{\Delta\kappa(A)} after
+#'   deleting row i.}
+#'   \item{rmsa_dnrmse}{Numeric vector of \eqn{\Delta\mathrm{NRMSE}} after
+#'   deleting row i.}
+#'   \item{rmsa_dzhat}{Numeric vector of \eqn{\Delta\|\hat{z}\|_2} after
+#'   deleting row i.}
+#'   \item{rmsa_dz}{Numeric vector of \eqn{\Delta\|z\|_2} after
+#'   deleting row i.}
+#'   \item{rmsa_dx}{Numeric vector of \eqn{\Delta \|x\|_2} or
+#'   \eqn{\Delta \|x\|_F} after deleting row i.}
 #' }
 #'
 #' @export
@@ -213,9 +220,9 @@ corr.clsp <- function(object, reset=FALSE, threshold=0) {
     object$rmsa_dkappaB <- rep(NA_real_, k)
     object$rmsa_dkappaA <- rep(NA_real_, k)
     object$rmsa_dnrmse  <- rep(NA_real_, k)
-    object$rmsa_dzhat   <- vector("list", k)
-    object$rmsa_dz      <- vector("list", k)
-    object$rmsa_dx      <- vector("list", k)
+    object$rmsa_dzhat   <- rep(NA_real_, k)
+    object$rmsa_dz      <- rep(NA_real_, k)
+    object$rmsa_dx      <- rep(NA_real_, k)
     for (i in 1:k) {
       tmp$A                  <- object$A[-i, , drop = FALSE]
       tmp$b                  <- object$b[-i, , drop = FALSE]
@@ -228,14 +235,13 @@ corr.clsp <- function(object, reset=FALSE, threshold=0) {
                                    (norms[i] * norms[j]))
         sqrt(1 / (k - 1) * sum(cos_i^2))
       }
-      object$rmsa_dkappaC[i] <- tmp$kappaC - object$kappaC
-      object$rmsa_dkappaB[i] <- tmp$kappaB - object$kappaB
-      object$rmsa_dkappaA[i] <- tmp$kappaA - object$kappaA
-      object$rmsa_dnrmse[i]  <- tmp$nrmse  - object$nrmse
-      object$rmsa_dzhat[[i]] <- tmp$zhat   - object$zhat
-      object$rmsa_dz[[i]]    <- tmp$z      - object$z
-      object$rmsa_dx[[i]]    <- matrix(tmp$x,    ncol = 1, byrow=TRUE) -
-        matrix(object$x, ncol = 1, byrow=TRUE)
+      object$rmsa_dkappaC[i] <- tmp$kappaC      - object$kappaC
+      object$rmsa_dkappaB[i] <- tmp$kappaB      - object$kappaB
+      object$rmsa_dkappaA[i] <- tmp$kappaA      - object$kappaA
+      object$rmsa_dnrmse[i]  <- tmp$nrmse       - object$nrmse
+      object$rmsa_dzhat[i]   <- .norm(tmp$zhat) - .norm(object$zhat)
+      object$rmsa_dz[i]      <- .norm(tmp$z)    - .norm(object$z)
+      object$rmsa_dx[i]      <- .norm(tmp$x)    - .norm(object$x)
     }
   }
   
@@ -323,13 +329,27 @@ ttest.clsp <- function(object, reset=FALSE, sample_size=50L,
     object$nrmse_ttest <- rep(NA_real_, sample_size)
     # (re)generate a nonparametric bootstrap sample
     if (!isTRUE(simulate)) {
-      res <- object$b - object$A %*% object$zhat
+      residuals <- object$A %*% object$z - object$b
       for (i in seq_len(sample_size)) {
-        res_bs                <- matrix(sample(as.vector(res), size=length(res),
-                                               replace=TRUE), ncol=1,
+        residuals_i           <- if (!isTRUE(partial)) residuals else 
+                                 residuals[
+                                   (object$C_idx[1] + 1L):nrow(residuals), ,
+                                   drop=FALSE
+                                 ]
+        bootstrap             <- matrix(sample(as.vector(residuals_i),
+                                               size=length(residuals_i),
+                                               replace=TRUE), ncol=1L,
                                         byrow=TRUE)
-        object$nrmse_ttest[i] <-as.numeric(.nrmse.r2(object, res=res_bs,
-                                                     partial=isTRUE(partial)))
+        b                     <- if (!isTRUE(partial)) object$b  else
+                                 object$b[
+                                   (object$C_idx[1] + 1L):nrow(object$b), ,
+                                   drop=FALSE
+                                 ]
+        object$nrmse_ttest[i] <- { sdb <- .pop.sd(as.numeric(b))
+                                   if (!isTRUE(all.equal(sdb, 0)))
+                                   sqrt(sum(as.numeric(bootstrap)^2)) /
+                                   sqrt(nrow(b)) / sdb           else
+                                   Inf }
       }
       # (re)generate a parametric Monte Carlo sample
     } else {
@@ -481,6 +501,12 @@ print.summary.clsp <- function(x, ...) {
       1 -  sum(res^2)  /  tss
   } else if (isTRUE(all.equal(sdb, 0))) NA_real_            else
     sqrt(sum(res^2)) /  sqrt(nrow(b)) / sdb
+}
+.norm <- function(x) {
+  x <- as.matrix(x)
+  if (length(dim(x)) > 1L && nrow(x) > 1L && ncol(x) > 1L)
+    return(sqrt(sum(x^2)))                             # Frobenius norm
+  sqrt(sum(as.numeric(x)^2))                           # Euclidean norm
 }
 .summary <- function(v) {
   if (is.null(v) || all(is.na(v)))

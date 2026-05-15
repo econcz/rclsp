@@ -19,15 +19,22 @@ If positive, limits the output to constraints with
 \value{
 A named list containing per-row diagnostic values:
 \describe{
-\item{constraint}{Vector of constraint indices (1-based).}
-\item{rmsa_i}{List of \eqn{\mathrm{RMSA}_i} values.}
-\item{rmsa_dkappaC}{List of \eqn{\Delta\kappa(C)} after deleting row i.}
-\item{rmsa_dkappaB}{List of \eqn{\Delta\kappa(B)} after deleting row i.}
-\item{rmsa_dkappaA}{List of \eqn{\Delta\kappa(A)} after deleting row i.}
-\item{rmsa_dnrmse}{List of \eqn{\Delta\mathrm{NRMSE}} after deleting row i.}
-\item{rmsa_dzhat}{List of \eqn{\Delta\hat{z}} after deleting row i.}
-\item{rmsa_dz}{List of \eqn{\Delta z} after deleting row i.}
-\item{rmsa_dx}{List of \eqn{\Delta x} after deleting row i.}
+\item{constraint}{Numeric vector of constraint indices (1-based).}
+\item{rmsa_i}{Numeric vector of \eqn{\mathrm{RMSA}_i} values.}
+\item{rmsa_dkappaC}{Numeric vector of \eqn{\Delta\kappa(C)} after
+deleting row i.}
+\item{rmsa_dkappaB}{Numeric vector of \eqn{\Delta\kappa(B)} after
+deleting row i.}
+\item{rmsa_dkappaA}{Numeric vector of \eqn{\Delta\kappa(A)} after
+deleting row i.}
+\item{rmsa_dnrmse}{Numeric vector of \eqn{\Delta\mathrm{NRMSE}} after
+deleting row i.}
+\item{rmsa_dzhat}{Numeric vector of \eqn{\Delta\|\hat{z}\|_2} after
+deleting row i.}
+\item{rmsa_dz}{Numeric vector of \eqn{\Delta\|z\|_2} after
+deleting row i.}
+\item{rmsa_dx}{Numeric vector of \eqn{\Delta \|x\|_2} or
+\eqn{\Delta \|x\|_F} after deleting row i.}
 }
 }
 \description{
@@ -43,8 +50,8 @@ For each row \eqn{i} in \eqn{C_{\text{canon}}}, it computes:
 other rows \eqn{j \ne i}.
 \item The change in condition numbers \eqn{\kappa(C)}, \eqn{\kappa(B)}, and
 \eqn{\kappa(A)} when row \eqn{i} is deleted.
-\item The effect on estimation quality: changes in NRMSE, \eqn{\hat{z}},
-\eqn{z}, and \eqn{x}.
+\item The effect on estimation quality: changes in NRMSE and in the norms
+of \eqn{\hat{z}}, \eqn{z}, and \eqn{x}.
 }
 
 Additionally, it computes the total RMSA statistic across all rows,

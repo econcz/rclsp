@@ -18,6 +18,10 @@
 #' problems (AP), constrained modular least squares (CMLS), and general CLSP
 #' formulations.
 #'
+#' To ensure cross-platform reproducibility, all CLSP implementations use a
+#' modified condition number function based on singular values, with a relative
+#' cutoff equal to \eqn{cond\_tolerance\ *\ the\ largest\ singular\ value}.
+#'
 #' @param problem character scalar, optional  
 #'   Structural template for matrix construction. One of:
 #'   - `'ap'`   or `'tm'`: allocation or tabular matrix problem.
@@ -94,6 +98,11 @@
 #'               {\mathrm{NRMSE}_{\alpha=0} +
 #'                \mathrm{NRMSE}_{\alpha=1} +
 #'                \mathrm{tolerance}}\right)}.
+#'
+#' @param cond_tolerance numeric scalar or \code{NULL}, default = \code{NULL}
+#'   Singular-value cutoff for the custom condition number function.
+#'   If \code{NULL}, the implementation uses an internal relative cutoff of
+#'   1e-14.
 #'
 #' @param ... Optional.  
 #'   Additional arguments passed to the \pkg{CVXR} solver backend.
@@ -191,12 +200,13 @@
 clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
                  i=1L, j=1L, zero_diagonal=FALSE, r=1L, Z=NULL, rcond=FALSE,
                  tolerance=NULL, iteration_limit=NULL, final=TRUE, alpha=NULL,
-                 ...) {
+                 cond_tolerance=NULL, ...) {
   object <- list(
     A               = NULL,
     C_idx           = c(NA_integer_, NA_integer_),
     b               = NULL,
     Z               = NULL,
+    rcond           = FALSE,
     tolerance       = if (is.null(tolerance)) sqrt(.Machine$double.eps)
     else as.numeric(tolerance),
     iteration_limit = if (is.null(iteration_limit)) 50L
@@ -239,9 +249,11 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
   object <- do.call(.solve, c(list(object, problem=problem,
                                    C=C, S=S, M=M, b=b, m=m, p=p, i=i, j=j,
                                    zero_diagonal=zero_diagonal,
-                                   r=r, Z=Z, rcond=rcond, tolerance=tolerance,
+                                   r=r, Z=Z, rcond=rcond,
+                                   tolerance=tolerance,
                                    iteration_limit=iteration_limit,
-                                   final=final, alpha=alpha),
+                                   final=final, alpha=alpha,
+                                   cond_tolerance=cond_tolerance),
                               dots))
   
   class(object) <- "clsp"
@@ -253,7 +265,8 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
 .solve.instance <- function(object, problem="", C=NULL, S=NULL, M=NULL, b=NULL,
                             m=NULL, p=NULL, i=1L, j=1L, zero_diagonal=FALSE,
                             r=1L, Z=NULL, rcond=FALSE, tolerance=NULL,
-                            iteration_limit=NULL, final=NULL, alpha=NULL, ...) {
+                            iteration_limit=NULL, final=NULL, alpha=NULL,
+                            cond_tolerance=NULL, ...) {
   # (A), (b) Construct a conformable canonical form for the CLSP estimator
   if (!is.null(C) || !is.null(M) || (!is.null(m) && !is.null(p))) {
     object <- canonize.clsp(object, problem, C, S, M, NULL, b,
@@ -271,6 +284,7 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
   else if (is.null(object$Z))         object$Z <- diag(ncol(object$A))
   else                                object$Z <- object$Z[1:ncol(object$A),
                                                            1:ncol(object$A)]
+  if      (!is.null(rcond))           object$rcond           <- rcond
   if      (!is.null(tolerance))       object$tolerance       <- tolerance
   if      (!is.null(iteration_limit)) object$iteration_limit <- iteration_limit
   if      (!isTRUE(all.equal(object$Z,                    t(object$Z),
@@ -290,7 +304,7 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
       Q          <- diag(as.numeric(-sign(res[(object$C_idx[1]    +
                                                  1):nrow(object$A), ,
                                               drop=FALSE])))
-      object     <- canonize.clsp(object, problem, C, S, M, Q, b, m, p, i, j,
+      object     <- canonize.clsp(object, "", C, S, M, Q, b, m, p, i, j,
                                   zero_diagonal)
       Z_delta <- ncol(object$A) - nrow(object$Z)
       if (Z_delta > 0L) {                              # augment Z by I
@@ -302,14 +316,12 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
     }
     # solve via the Bott–Duffin inverse
     object$zhat <- with(svd(M <- object$Z %*% crossprod(object$A) %*% object$Z),
-                        v %*% diag(ifelse(d > ((     if (isFALSE(rcond))
-                          max(dim(M))      *
-                            .Machine$double.eps
-                          else if (isTRUE(rcond))
-                            object$tolerance
-                          else rcond) * max(d)), 1/d, 0),
-                          length(d)) %*% t(u)            %*%
-                          object$Z %*% t(object$A)
+                        v %*% diag(ifelse(d > ((  if (isFALSE(object$rcond))
+                          max(dim(M))             * .Machine$double.eps
+                          else if (isTRUE(object$rcond))      object$tolerance
+                          else object$rcond)      *  max(d)), 1/d, 0),
+                          length(d)) %*% t(u)                 %*%
+                          object$Z   %*% t(object$A)
     ) %*% object$b
     object$nrmse <- .nrmse.r2(object, res=object$b - object$A %*% object$zhat)
     # break on convergence
@@ -344,12 +356,13 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
     c_cvx <- list(CVXR::as_cvxr_expr(A_csc) %*% z_cvx == as.numeric(object$b))
     p_cvx <- CVXR::Problem(CVXR::Minimize(f_obj), c_cvx)
     # solve
-    dots       <- list(...)                            # pass arguments
-    dots$rcond <- NULL
-    solution   <- try(do.call(CVXR::psolve,c(list(p_cvx, solver=s_cvx,
-                              verbose=FALSE), dots)),          silent=TRUE)
-    z_val      <- try(CVXR::value(z_cvx),  silent=TRUE)
-    p_status   <- try(CVXR::status(p_cvx), silent=TRUE)
+    dots                <- list(...)                   # pass arguments
+    dots$rcond          <- NULL
+    dots$cond_tolerance <- NULL
+    solution            <- try(do.call(CVXR::psolve,c(list(p_cvx, solver=s_cvx,
+                               verbose=FALSE), dots)), silent=TRUE)
+    z_val               <- try(CVXR::value(z_cvx),     silent=TRUE)
+    p_status            <- try(CVXR::status(p_cvx),    silent=TRUE)
     if (inherits(solution, "try-error") || inherits(z_val, "try-error") ||
         is.null(z_val)) {
       status_msg <- if (inherits(p_status, "try-error")) "unknown" else p_status
@@ -373,10 +386,13 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
     else matrix(numeric(0), ncol=1))
   
   # (kappaC), (kappaB), (kappaA) Condition numbers
-  object$kappaC <- kappa(object$A[1:object$C_idx[1], ,    drop=FALSE])
-  object$kappaB <- kappa(object$A %*% MASS::ginv(object$A[1:object$C_idx[1], ,
-                                                          drop=FALSE]))
-  object$kappaA <- kappa(object$A)
+  C_pinv  <- with(svd(C_canon <- object$A[1:object$C_idx[1], , drop=FALSE]),
+                  v %*% diag(ifelse(d > max(dim(C_canon)) *
+                                      .Machine$double.eps * max(d), 1/d, 0),
+                             length(d)) %*% t(u))
+  object$kappaC <- .cond(C_canon,             "e", cond_tolerance)
+  object$kappaB <- .cond(object$A %*% C_pinv, "e", cond_tolerance)
+  object$kappaA <- .cond(object$A,            "e", cond_tolerance)
   
   # (r2_partial), (nrmse_partial) M-block-based statistics
   if (nrow(object$A) > object$C_idx[1]) {
@@ -386,8 +402,8 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
   
   # (z_lower), (z_upper) Condition-weighted confidence band
   b_norm <- sqrt(sum(object$b^2))
-  dz     <- if (isTRUE(all.equal(b_norm, 0))) Inf                       else
-    object$kappaA                 *
+  dz     <- if (isTRUE(all.equal(b_norm, 0))) Inf                      else
+    object$kappaA                  *
     sqrt(sum((object$b - object$A %*%
                 matrix(object$z, ncol=1))^2)) /
     b_norm
@@ -421,38 +437,64 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
   to.nrmse       <- function(n) if (is.finite(n)) n else Inf
   
   # process alpha
-  if      (!is.null(tolerance))
-    object$tolerance <- tolerance
-  if      (!is.null(alpha) && (is.finite(alpha) && is.atomic(alpha) &&
-                               length(alpha) == 1L))
-    object$alpha     <- to.alpha(alpha)
-  else if (!is.null(alpha) && (is.list(alpha)   || is.atomic(alpha) &&
-                               length(alpha) >  1L)) {
-    alpha  <- sapply(alpha, to.alpha)
-    result <- numeric(length(alpha))
-    idx    <- 1L
-    for (a in alpha) {
-      result[idx] <- suppressWarnings(to.nrmse(do.call(.solve.instance,
-                                     c(list(object, tolerance=object$tolerance,
-                                            final=NULL, alpha=a), dots))$nrmse))
-      idx         <- idx + 1L
+  if   (!is.null(tolerance))
+      object$tolerance <- tolerance
+  if   (isTRUE(object$final)) {
+    if      (!is.null(alpha) && is.atomic(alpha) && length(alpha) == 1L &&
+                                is.finite(alpha))
+      object$alpha     <- to.alpha(alpha)
+    else if (!is.null(alpha) && is.atomic(alpha) && length(alpha) > 1L) {
+      alpha  <- as.numeric(unlist(alpha))
+      alpha  <- alpha[  is.finite(alpha)]
+      alpha  <- sapply(alpha,  to.alpha)
+      result <- numeric(   length(alpha))
+      idx    <- 1L
+      for (a in alpha) {
+        result[idx] <- suppressWarnings(to.nrmse(do.call(.solve.instance,
+                                       c(list(object,
+                                              tolerance=object$tolerance,
+                                              final=NULL, alpha=a),
+                                         dots))$nrmse))
+        idx         <- idx + 1L
+      }
+      object$alpha  <- if (length(result) > 0L)
+                       alpha[which.min(result)]                        else NULL
     }
-    object$alpha  <- if (length(result) > 0L) alpha[which.min(result)]  else
-      NULL
-  }
-  if (is.null(object$alpha)) {                         # error rule
-    nrmse.alpha0  <- suppressWarnings(to.nrmse(do.call(.solve.instance,
-                                      c(list(object, tolerance=object$tolerance,
-                                            final=NULL, alpha=0), dots))$nrmse))
-    nrmse.alpha1  <- suppressWarnings(to.nrmse(do.call(.solve.instance,
-                                      c(list(object, tolerance=object$tolerance,
-                                            final=NULL, alpha=1), dots))$nrmse))
-    denominator   <- nrmse.alpha0 + nrmse.alpha1 + object$tolerance
-    object$alpha  <- if (is.finite(denominator) && denominator > 0)
-      to.alpha(nrmse.alpha0 / denominator)               else
-        0.5
+    if (is.null(object$alpha)) {                       # error rule
+      nrmse.alpha0  <- suppressWarnings(to.nrmse(do.call(.solve.instance,
+                                        c(list(object,
+                                               tolerance=object$tolerance,
+                                              final=NULL, alpha=0),
+                                          dots))$nrmse))
+      nrmse.alpha1  <- suppressWarnings(to.nrmse(do.call(.solve.instance,
+                                        c(list(object,
+                                               tolerance=object$tolerance,
+                                              final=NULL, alpha=1),
+                                          dots))$nrmse))
+      denominator   <- nrmse.alpha0 + nrmse.alpha1 + object$tolerance
+      object$alpha  <- if (is.finite(denominator) && denominator > 0)
+                       to.alpha(nrmse.alpha0 / denominator)            else 0.5
+    }
   }
   
   do.call(.solve.instance, c(list(object, tolerance=object$tolerance,
                                   final=NULL, alpha=object$alpha), dots))
+}
+.cond <- function(x=matrix(NaN, nrow=0, ncol=0), norm="e", tolerance=NULL) {
+  x         <- as.matrix(x)
+  norm      <- substr(tolower(trimws(as.character(norm))), 1L, 1L)
+  norm      <- if (!is.na(norm) && norm != "") norm  else  "e"
+  tolerance <- if (is.null(tolerance))         1e-14 else  as.numeric(tolerance)
+  
+  if (length(dim(x)) != 2L || nrow(x) == 0L || ncol(x) == 0L)
+    return(NaN)
+  s    <- svd(x, nu=0L, nv=0L)$d
+  smax <- max(s)
+  s    <- s[s > tolerance * smax]
+  if (length(s) == 0L)
+    return(NaN)
+  if (norm == "e")
+    return(as.numeric(smax / min(s)))
+  else
+    as.numeric(sqrt(sum(s^2)) * sqrt(sum((1.0 / s)^2)))
 }

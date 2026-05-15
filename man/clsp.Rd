@@ -22,6 +22,7 @@ clsp(
   iteration_limit = NULL,
   final = TRUE,
   alpha = NULL,
+  cond_tolerance = NULL,
   ...
 )
 }
@@ -38,8 +39,8 @@ Structural template for matrix construction. One of:
 \item{C, S, M}{numeric matrix or \code{NULL}
 Blocks of the constraint matrix
 \eqn{\mathbf{A} = \begin{bmatrix} \mathbf{C} & \mathbf{S} \\
-                                    \mathbf{M} & \mathbf{Q}
-                    \end{bmatrix}}.
+                                  \mathbf{M} & \mathbf{Q}
+                  \end{bmatrix}}.
 If \eqn{\boldsymbol{C}} and/or \eqn{\boldsymbol{M}} are provided, the
 matrix \eqn{\boldsymbol{A}} is constructed accordingly. If both are
 \code{NULL} and \eqn{\boldsymbol{A}} is not yet defined, an error is
@@ -100,12 +101,17 @@ If a numeric scalar is provided, that value is used after clipping to
 via a full solve, and the \eqn{\alpha} with the smallest NRMSE is selected.
 If \code{NULL}, \eqn{\alpha} is chosen automatically according to
 \deqn{\alpha =
-         \min\left(1,\,
-         \frac{\mathrm{NRMSE}_{\alpha=0}}
-              {\mathrm{NRMSE}_{\alpha=0} +
-               \mathrm{NRMSE}_{\alpha=1} +
-               \mathrm{tolerance}}\right)}.
+       \min\left(1,\,
+       \frac{\mathrm{NRMSE}_{\alpha=0}}
+            {\mathrm{NRMSE}_{\alpha=0} +
+             \mathrm{NRMSE}_{\alpha=1} +
+             \mathrm{tolerance}}\right)}.
 }}
+
+\item{cond_tolerance}{numeric scalar or \code{NULL}, default = \code{NULL}
+Singular-value cutoff for the custom condition number function.
+If \code{NULL}, the implementation uses an internal relative cutoff of
+1e-14.}
 
 \item{...}{Optional.
 Additional arguments passed to the \pkg{CVXR} solver backend.}
@@ -136,6 +142,10 @@ mixed \eqn{\ell_1/\ell_2} norm under equality constraints
 \eqn{\mathbf{A}\mathbf{z} = \mathbf{b}}. The method supports allocation
 problems (AP), constrained modular least squares (CMLS), and general CLSP
 formulations.
+
+To ensure cross-platform reproducibility, all CLSP implementations use a
+modified condition number function based on singular values, with a relative
+cutoff equal to \eqn{cond\_tolerance\ *\ the\ largest\ singular\ value}.
 }
 \examples{
 \dontrun{
