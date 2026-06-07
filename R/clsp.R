@@ -304,8 +304,8 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
       Q          <- diag(as.numeric(-sign(res[(object$C_idx[1]    +
                                                  1):nrow(object$A), ,
                                               drop=FALSE])))
-      object     <- canonize.clsp(object, "", C, S, M, Q, b, m, p, i, j,
-                                  zero_diagonal)
+      object     <- canonize.clsp(object, problem, C, S, M, Q, object$b,
+                                  m, p, i, j, zero_diagonal)
       Z_delta <- ncol(object$A) - nrow(object$Z)
       if (Z_delta > 0L) {                              # augment Z by I
         object$Z <- rbind(cbind(object$Z,

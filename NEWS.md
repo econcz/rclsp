@@ -1,3 +1,15 @@
+# rclsp 1.1.0
+
+## Changes
+* Updated the minimum R version to R 4.3 to match CVXR 1.8.x requirements.
+* Restricted the supported CVXR version range to 1.8.x.
+
+## Bug fixes
+* Fixed AP/TM refinement canonicalization by preserving the original problem
+  type during iterative refinement.
+* Reused the canonical right-hand-side vector during refinement to keep
+  dimensions consistent across repeated calls to canonize.clsp().
+
 # rclsp 1.0.0
 
 ## Changes
