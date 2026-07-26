@@ -1,3 +1,13 @@
+# rclsp 2.0.0
+
+## Changes
+* Achieved alignment of the R implementation with the Python implementation.
+
+## Bug fixes
+* Fixed a variable-shadowing bug in `.solve.instance()` where the model block
+  `M` was overwritten by the internal Bott-Duffin Gram matrix during the
+  pseudoinverse step.
+
 # rclsp 1.1.0
 
 ## Changes

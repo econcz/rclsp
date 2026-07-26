@@ -315,9 +315,9 @@ clsp <- function(problem="", C=NULL, S=NULL, M=NULL, b=NULL, m=NULL, p=NULL,
       }
     }
     # solve via the Bott–Duffin inverse
-    object$zhat <- with(svd(M <- object$Z %*% crossprod(object$A) %*% object$Z),
+    object$zhat <- with(svd(G <- object$Z %*% crossprod(object$A) %*% object$Z),
                         v %*% diag(ifelse(d > ((  if (isFALSE(object$rcond))
-                          max(dim(M))             * .Machine$double.eps
+                          max(dim(G))             * .Machine$double.eps
                           else if (isTRUE(object$rcond))      object$tolerance
                           else object$rcond)      *  max(d)), 1/d, 0),
                           length(d)) %*% t(u)                 %*%
